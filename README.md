@@ -65,6 +65,15 @@ Renderer arguments:
 
     ```python3 demo.py -i filename```
 
+|Keypress in OpenCV window|Function|
+|-|-|
+|*Esc*|Exit|
+|*space*|Pause|
+|b|Show/hide bounding boxes|
+|l|Show/hide landmarks|
+|s|Show/hide scores|
+|f|Show/hide FPS|
+
 ## Models:
 
 The [source ONNX model](https://github.com/opencv/opencv_zoo/blob/dev/models/face_detection_yunet/face_detection_yunet.onnx) comes from the OpenCv zoo.
