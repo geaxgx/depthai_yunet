@@ -21,6 +21,7 @@ def find_isp_scale_params(size, is_height=True):
     # We want size >= 288
     if size < 288:
         size = 288
+ 
     
     # We are looking for the list on integers that are divisible by 16 and
     # that can be written like n/d where n <= 16 and d <= 63
@@ -31,13 +32,14 @@ def find_isp_scale_params(size, is_height=True):
         reference = 1920 
         other = 1080
     size_candidates = {}
-    for s in range(288,reference,16):
+    for s in range(16,reference,16):
         f = gcd(reference, s)
         n = s//f
         d = reference//f
         if n <= 16 and d <= 63 and int(round(other * n / d) % 2 == 0):
             size_candidates[s] = (n, d)
             
+    print("_______________", size_candidates)
     # What is the candidate size closer to 'size' ?
     min_dist = -1
     for s in size_candidates:
@@ -146,23 +148,17 @@ class YuNet:
         
         # We want to keep aspect ratio of the input images
         # So we may need to pad the images before feeding them to the model
-        # - norm_padding defines the normalized padding in width and height directions 
-        #   (a value of 1 means no padding). Note that the padding when used is not applied
-        #   on both sides (top and bottom, or left and right) but only on the side
-        #   opposite to the origin (top or left). It makes calculations easier.
-        # - scale defines the scaling factor used to transform normalized coordinates to
-        #   coordinates in the input image  
-        imw_nnh = self.img_w * self.nn_input_h
-        nnw_imh = self.nn_input_w * self.img_h
-        if imw_nnh > nnw_imh:
-            self.norm_padding = [1, self.nn_input_w / self.nn_input_h]
-            self.scale = np.array((self.img_w, self.img_h * self.nn_input_w / self.nn_input_h))
-        elif imw_nnh == nnw_imh:
-            self.norm_padding = [1, 1]
-            self.scale = np.array((self.img_w, self.img_h))
+        # 'padded_size' is the size of the image once padded. 
+        # Note that the padding when used is not applied on both sides (top and bottom, 
+        # or left and right) but only on the side opposite to the origin (top or left). 
+        # It makes calculations easier.
+        self.iwnh_ihnw = self.img_w * self.nn_input_h / (self.img_h * self.nn_input_w) 
+        if self.iwnh_ihnw >= 1: 
+            self.padded_size = np.array((self.img_w, self.img_h * self.iwnh_ihnw)).astype(int)
         else:
-            self.norm_padding = [self.nn_input_h / self.nn_input_w, 1]
-            self.scale = np.array((self.img_w * self.nn_input_h / self.nn_input_w, self.img_h))
+            self.padded_size = np.array((self.img_w / self.iwnh_ihnw, self.img_h)).astype(int)
+        print(f"Source image size: {self.img_w} x {self.img_h}")
+        print(f"Padded image size: {self.padded_size[0]} x {self.padded_size[1]}")
 
         # Define and start pipeline
         usb_speed = self.device.getUsbSpeed()
@@ -216,15 +212,15 @@ class YuNet:
             manip.inputImage.setBlocking(False)
             points = [
                     [0, 0],
-                    [self.norm_padding[0], 0],
-                    [self.norm_padding[0], self.norm_padding[1]],
-                    [0, self.norm_padding[1]]]
+                    [self.padded_size[0], 0],
+                    [self.padded_size[0], self.padded_size[1]],
+                    [0, self.padded_size[1]]]
             point2fList = []
             for p in points:
                 pt = dai.Point2f()
                 pt.x, pt.y = p[0], p[1]
                 point2fList.append(pt)
-            manip.initialConfig.setWarpTransformFourPoints(point2fList, True)
+            manip.initialConfig.setWarpTransformFourPoints(point2fList, False)
             manip.initialConfig.setResize(self.nn_input_w, self.nn_input_h)
 
             cam.preview.link(manip.inputImage)
@@ -302,19 +298,19 @@ class YuNet:
 
         # get bboxes
         bboxes = np.hstack((
-            (self.priors[:, 0:2] + loc[:, 0:2] * self.variance[0] * self.priors[:, 2:4]) * self.scale,
-            (self.priors[:, 2:4] * np.exp(loc[:, 2:4] * self.variance)) * self.scale
+            (self.priors[:, 0:2] + loc[:, 0:2] * self.variance[0] * self.priors[:, 2:4]) * self.padded_size,
+            (self.priors[:, 2:4] * np.exp(loc[:, 2:4] * self.variance)) * self.padded_size
         ))
         # (x_c, y_c, w, h) -> (x1, y1, w, h)
         bboxes[:, 0:2] -= bboxes[:, 2:4] / 2
 
         # get landmarks
         landmarks = np.hstack((
-            (self.priors[:, 0:2] + loc[:,  4: 6] * self.variance[0] * self.priors[:, 2:4]) * self.scale,
-            (self.priors[:, 0:2] + loc[:,  6: 8] * self.variance[0] * self.priors[:, 2:4]) * self.scale,
-            (self.priors[:, 0:2] + loc[:,  8:10] * self.variance[0] * self.priors[:, 2:4]) * self.scale,
-            (self.priors[:, 0:2] + loc[:, 10:12] * self.variance[0] * self.priors[:, 2:4]) * self.scale,
-            (self.priors[:, 0:2] + loc[:, 12:14] * self.variance[0] * self.priors[:, 2:4]) * self.scale
+            (self.priors[:, 0:2] + loc[:,  4: 6] * self.variance[0] * self.priors[:, 2:4]) * self.padded_size,
+            (self.priors[:, 0:2] + loc[:,  6: 8] * self.variance[0] * self.priors[:, 2:4]) * self.padded_size,
+            (self.priors[:, 0:2] + loc[:,  8:10] * self.variance[0] * self.priors[:, 2:4]) * self.padded_size,
+            (self.priors[:, 0:2] + loc[:, 10:12] * self.variance[0] * self.priors[:, 2:4]) * self.padded_size,
+            (self.priors[:, 0:2] + loc[:, 12:14] * self.variance[0] * self.priors[:, 2:4]) * self.padded_size
         ))
 
         dets = np.hstack((bboxes, landmarks, scores))
@@ -369,11 +365,13 @@ class YuNet:
             # as the model input, and resized to the model input resolution
             padded = cv2.copyMakeBorder(frame,
                                         0,
-                                        int(self.img_h * (self.norm_padding[1] - 1)),
+                                        self.padded_size[1] - self.img_h,
                                         0,
-                                        int(self.img_w * (self.norm_padding[0] - 1)),
+                                        self.padded_size[0] - self.img_w,
                                         cv2.BORDER_CONSTANT)
             padded = cv2.resize(padded, (self.nn_input_w, self.nn_input_h), interpolation=cv2.INTER_AREA)
+            if self.trace:
+                cv2.imshow("NN input", padded)
             frame_nn = dai.ImgFrame()
             frame_nn.setTimestamp(now())
             frame_nn.setWidth(self.nn_input_w)
@@ -394,7 +392,7 @@ class YuNet:
         if self.trace and self.input_type == "rgb":
             manip = self.q_manip_out.get()
             manip = manip.getCvFrame()
-            cv2.imshow("manip out", manip)  
+            cv2.imshow("NN input", manip)  
 
         return frame, faces
 
