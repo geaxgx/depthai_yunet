@@ -39,7 +39,6 @@ def find_isp_scale_params(size, is_height=True):
         if n <= 16 and d <= 63 and int(round(other * n / d) % 2 == 0):
             size_candidates[s] = (n, d)
             
-    print("_______________", size_candidates)
     # What is the candidate size closer to 'size' ?
     min_dist = -1
     for s in size_candidates:
@@ -80,10 +79,12 @@ class YuNet:
                 input_src=None,                 
                 conf_threshold=0.6, 
                 nms_threshold=0.3, 
+                top_k = 50,
                 internal_fps=50,
                 internal_frame_height=640,
                 stats=False,
-                trace=False):
+                trace=False,
+                ):
 
         self.model = model
         if not os.path.isfile(model):
@@ -106,8 +107,7 @@ class YuNet:
         
         self.conf_threshold = conf_threshold
         self.nms_threshold = nms_threshold
-        self.top_k = 5000
-        self.keep_top_k = 750
+        self.top_k = top_k
         self.stats = stats
         self.trace = trace
 
@@ -146,6 +146,7 @@ class YuNet:
             self.img_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             print("Video FPS:", self.video_fps)
         
+
         # We want to keep aspect ratio of the input images
         # So we may need to pad the images before feeding them to the model
         # 'padded_size' is the size of the image once padded. 
@@ -278,6 +279,7 @@ class YuNet:
                     cy = (i + 0.5) * self.steps[k] / h
 
                     priors.append([cx, cy, s_kx, s_ky])
+        print("Priors length =", len(priors))
         self.priors = np.array(priors, dtype=np.float32)
 
     def decode(self, inference):
@@ -317,6 +319,13 @@ class YuNet:
 
         return dets
 
+    def save_inference_to_npz(self, inference):
+        loc = np.array(inference.getLayerFp16("loc"), dtype=np.float32).reshape(-1, 14)
+        conf = np.array(inference.getLayerFp16("conf"), dtype=np.float32).reshape(-1, 2)
+        iou = np.array(inference.getLayerFp16("iou"), dtype=np.float32)
+        np.savez("models/build/yunet_output.npz", loc=loc, conf=conf, iou=iou, w=self.nn_input_w, h=self.nn_input_h)
+
+
     def postprocess(self, inference):
         # Decode
         dets = self.decode(inference)
@@ -332,7 +341,7 @@ class YuNet:
         if len(keep_idx) > 0:
             dets = dets[keep_idx]
             dets = np.squeeze(dets, axis=1)
-            return dets[:self.keep_top_k]
+            return dets # [:self.keep_top_k]
         else:
             return np.empty(shape=(0, 15))
 

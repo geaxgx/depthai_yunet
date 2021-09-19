@@ -66,7 +66,7 @@ class YuNetRenderer:
         key = cv2.waitKey(delay) 
         if key == 32:
             # Pause on space bar
-            self.pause = not self.pause
+            cv2.waitKey(0)
         elif key == ord('b'):
             self.show_bbox = not self.show_bbox
         elif key == ord('l'):

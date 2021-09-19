@@ -2,6 +2,7 @@
 
 from YuNetRenderer import YuNetRenderer
 import argparse
+import sys
 
 # List available models and their input resolution
 # The name of a model is face_detection_yunet_{H}x{W}.blob
@@ -14,9 +15,14 @@ model_list = glob("models/face_detection_yunet_*.blob")
 res_list = list(set([ re.sub(r'models/face_detection_yunet_(.*)_.*\.blob', r'\1', model) for model in model_list]))
 
 parser = argparse.ArgumentParser()
-# parser.add_argument('-e', '--edge', action="store_true",
-#                     help="Use Edge mode (postprocessing runs on the device)")
+parser.add_argument('-e', '--edge', action="store_true",
+                    help="Use Edge mode (postprocessing runs on the device)")
 parser_det = parser.add_argument_group("Tracker arguments")
+parser_det.add_argument('-myu', '--model_yunet', type=str, 
+                    help="Path to Yunet blob")
+parser_det.add_argument('-mpp', '--model_postproc', type=str, 
+                    help="Path to Post Processing model blob (only in edge node)")
+
 parser_det.add_argument('-i', '--input', type=str, 
                     help="Path to video or image file to use as input (if not specified, use OAK color camera)")
 
@@ -28,23 +34,83 @@ parser_det.add_argument('-f', '--internal_fps', type=int,
 #                     help="Sensor resolution: 'full' (1920x1080) or 'ultra' (3840x2160) (default=%(default)s)")
 parser_det.add_argument('--internal_frame_height', type=int,                                                                                 
                     help="Internal color camera frame height in pixels") 
+parser_det.add_argument('-s', '--sync', action="store_true",
+                    help="Synchronize video frame and Yunet inference (only in Edge mode)")
 parser_det.add_argument('-t', '--trace', action="store_true", 
                     help="Print some debug messages")                
 parser_renderer = parser.add_argument_group("Renderer arguments")
 parser_renderer.add_argument('-o', '--output', 
                     help="Path to output video file")
 args = parser.parse_args()
-# If there ara several blobs with the same resolution, let's take the first one.
-model = glob(f"models/face_detection_yunet_{args.model_resolution}*.blob")[0]
 
+if args.model_yunet is not None:
+    model_yunet = args.model_yunet
+else:
+    # List the models having the specified resolution
+    # If found exactly one, use that one
+    # If more than one, let the user choose
+    models = glob(f"models/face_detection_yunet_*{args.model_resolution}*.blob")
+    if len(models) == 0:
+        print(f"There is no YuNet model with resolution {args.model_resolution} !")
+        sys.exit()
+    elif len(models) == 1:
+        model_yunet = models[0]
+    else:
+        print(f"There are several YuNet model with resolution {args.model_resolution}.")
+        print("To select the model, enter its # :")
+        for i, m in enumerate(models):
+            print(f"{i+1}) {m}")
+        print(f"Your selection [1] ? ", end='')
+        sel = input()
+        try:
+            sel = 0 if sel == "" else int(sel) - 1
+            model_yunet = models[sel]
+        except:
+            print("Invalid selection !")
+            sys.exit()
 
-from YuNet import YuNet
+if args.edge:
+    # Selection of the Post Processing model
+    if args.model_postproc is not None:
+        model_postproc = args.model_postproc
+    else:
+        # List the models having the specified resolution
+        # If found exactly one, use that one
+        # If more than one, let the user choose
+        models = glob(f"models/postproc_yunet_*{args.model_resolution}*.blob")
+        if len(models) == 0:
+            print(f"There is no Post Processing model with resolution {args.model_resolution} !")
+            sys.exit()
+        elif len(models) == 1:
+            model_postproc = models[0]
+        else:
+            print(f"There are several Post Processing model with resolution {args.model_resolution}.")
+            print("To select the model, enter its # :")
+            for i, m in enumerate(models):
+                print(f"{i+1}) {m}")
+            print(f"Your selection [1] ? ", end='')
+            sel = input()
+            try:
+                sel = 0 if sel == "" else int(sel) - 1
+                model_postproc = models[sel]
+            except:
+                print("Invalid selection !")
+                sys.exit()
 
 dargs = vars(args)
+
 detector_args = {a:dargs[a] for a in ['internal_fps', 'internal_frame_height'] if dargs[a] is not None}
 
+if args.edge:
+    from YuNetEdge import YuNet
+    detector_args["model_postproc"] = model_postproc
+    detector_args["sync"] = args.sync
+else:
+    from YuNet import YuNet      
+    
+
 detector = YuNet(
-        model=model,
+        model=model_yunet,
         model_resolution=args.model_resolution,
         input_src=args.input,
         # resolution=args.resolution,
