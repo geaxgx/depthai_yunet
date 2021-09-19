@@ -84,6 +84,12 @@ Synchronization means here that the video frame you get is the one on which infe
 
     ```python3 demo.py -i filename```
 
+- When using the internal camera, to change its FPS to 70 : 
+
+    ```python3 demo.py --internal_fps 70```
+
+    Note: by default, the default internal camera FPS is fixed. It may be too slow or too fast for the chosen model. **So please, don't hesitate to play with this parameter to find the optimal value.** If you observe that your FPS is well below the default value, you should lower the FPS with this option until the set FPS is just above the observed FPS.
+
 |Keypress in OpenCV window|Function|
 |-|-|
 |*Esc*|Exit|
