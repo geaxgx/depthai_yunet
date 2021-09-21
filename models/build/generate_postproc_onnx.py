@@ -176,7 +176,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-W', type=int, required=True, help="yunet model input width")
 parser.add_argument('-H', type=int, required=True, help="yunet model input height")
 parser.add_argument('-top_k', type=int, default=50, help="max number of detections (default=%(default)i)")
-# parser.add_argument('-score_thresh', type=float, help="patch NMS op to use 'score_threshold' with given value")
+parser.add_argument('-score_thresh', type=float, help="patch NMS op to use 'score_threshold' with given value")
 parser.add_argument('-no_simp', action="store_true", help="do not run simplifier")
 args = parser.parse_args()
 
