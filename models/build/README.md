@@ -46,6 +46,7 @@ ONNX NonMaxSuppression has more [parameters](https://github.com/onnx/onnx/blob/m
     ![NonMaxSUppression-5 outputs](media/NonMaxSuppression-5-outputs.png)
     In the converted model, only the output `selected_indices` is used.
 7) Patch the IR xml file in order to set the NonMaxSUppression-5 third output `valid_outputs` as a model global output:
+
     ![OpenVINO](media/openvino_patched.png)
 
     So now, the model has 2 global outputs:
