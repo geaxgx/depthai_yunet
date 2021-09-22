@@ -172,6 +172,8 @@ optional arguments:
 # The command above generates 'postproc_yunet_top50_th60_180x320.onnx' in the 'models/build' directory (_th60_ means score_threshold=0.6)
 ```
 
+For a detailled description of what `models/build/generate_postproc_onnx.py` is doing under the hood, please read [models/build/README.md](models/build/README.md)
+
 Finally convert the ONNX model into OpenVINO IR format then in a blob file, using a similar method to the Yunet convertion :
 ```
 > cd models
