@@ -301,14 +301,15 @@ class YuNet:
         return code
 
     def postprocess(self, inference):
-        faces = np.array(inference.getFirstLayerFp16(), dtype=np.float32).reshape(-1, 15)
-        # Faces are sorted by score (higher score first)
-        # Find the first face with score below threshold and discard from there
-        for i in range(faces.shape[0]):
-            conf = faces[i,-1]
-            if conf < self.conf_threshold:
-                break
-        faces = faces[:i]
+        # print(inference.getAllLayerNames())
+        faces = np.array(inference.getLayerFp16("dets"), dtype=np.float32).reshape(-1, 15)
+        nb_valid_faces = inference.getLayerInt32("dets@shape")[0]
+
+        # for i in range(faces.shape[0]):
+        #     conf = faces[i,-1]
+        #     if conf < self.conf_threshold:
+        #         break
+        faces = faces[:nb_valid_faces]
 
         faces[:,2:4] -= faces[:,0:2] # Replace (x2,y2) by (w,h)
         faces[:,:14] *= np.tile(self.padded_size, 7)

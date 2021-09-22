@@ -1,6 +1,5 @@
 # YuNet Face Detection with DepthAI
 
-**WIP**
 
 Running YuNet on [DepthAI](https://docs.luxonis.com/) hardware (OAK-1, OAK-D, ...). 
 
@@ -8,7 +7,7 @@ Running YuNet on [DepthAI](https://docs.luxonis.com/) hardware (OAK-1, OAK-D, ..
 
 This repository heavily rely on the work done by :
 - OpenCV : the original ONNX model and the postprocessing code comes from the [OpenCV Zoo](https://github.com/opencv/opencv_zoo/tree/dev/models/face_detection_yunet);
-- PINTO : the models can be found [there](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/144_YuNet)
+- PINTO : the models can be found [there](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/144_YuNet). The models are also present in the current repository and scripts for regerenerating or generating new models are also available.
 
 ![Demo](img/oscars_360x640.gif)
 
@@ -139,10 +138,12 @@ So to generate the blob for a 360x640 resolution using 6 shaves of the MyriadX, 
 ### 2) Post Processing model
 The post processing model : 
 - takes the 3 outputs of the Yunet model (loc:Nx14, conf:Nx2 and iou:Nx1, with N depending on the Yunet input resolution, e.g. N=3210 for 180x360),
-- arrange a bit the datas before applying to them the Non Maximum Suppression algorithm. NMS outputs the 'top_k' better detections. `top_k` is a user-defined parameter chosen when generating the model. It corresponds the number max of faces, you want to detect. The higher, the slower. For instance, in an authentification application where the user stands in front of the camera, `top_k = 1` is probably enough. The default value in the script below is `top_k = 50`. The final output of the model is `faces` of shape top_k x 15, where:
-  - faces[:,0:4] represents the bounding box (x,y,width,height),
-  - faces[:,4:14] represents the 5 facial landmarks coordinates (x,y),
-  - faces[:,15] is the detection score.
+- arrange a bit the datas before applying to them the Non Maximum Suppression algorithm. NMS outputs the `top_k` better detections having a score above `score_thresh`. `top_k` and `score_thresh` are user-defined parameters chosen when generating the model. `top_k` corresponds the number max of faces, you want to detect. The higher, the slower. For instance, in an authentification application where the user stands in front of the camera, `top_k = 1` is probably enough. The default value in the script below is `top_k = 50`. The final outputs of the model are: 
+  - `dets` of shape top_k x 15, where:
+    - dets[:,0:4] represent the bounding boxes (x,y,width,height),
+    - dets[:,4:14] represent the 5 facial landmarks coordinates (x,y),
+    - dets[:,15] is the detection score.
+  - `dets@shape` that corresponds to the number of valid detections. So in `dets`, only the first `dets@shape` entries are valid.
 
 To generate a Post Processing model, some python packages are needed: torch, onnx, onnx-simplifier, onnx_graphsurgeon. They can be installed with the following command:
 ```
@@ -153,18 +154,22 @@ Then use the script `models/build/generate_postproc_onnx.py` to generate the ONN
 ```
 > cd models/build
 > python3 generate_postproc_onnx.py -h
-usage: generate_postproc_onnx.py [-h] -W W -H H [-top_k TOP_K] [-no_simp]
+usage: generate_postproc_onnx.py [-h] -W W -H H [-top_k TOP_K]
+                                 [-score_thresh SCORE_THRESH] [-no_simp]
 
 optional arguments:
-  -h, --help    show this help message and exit
-  -W W          yunet model input width
-  -H H          yunet model input height
-  -top_k TOP_K  max number of detections (default=50)
-  -no_simp      do not run simplifier
+  -h, --help            show this help message and exit
+  -W W                  yunet model input width
+  -H H                  yunet model input height
+  -top_k TOP_K          max number of detections (default=50)
+  -score_thresh SCORE_THRESH
+                        NMS score threshold
+  -no_simp              do not run simplifier
+
 
 # Example:
 > python3 generate_postproc_onnx.py -H 180 -W 320
-# The command above generates 'postproc_yunet_top50_180x320.onnx' in the 'models/build' directory
+# The command above generates 'postproc_yunet_top50_th60_180x320.onnx' in the 'models/build' directory (_th60_ means score_threshold=0.6)
 ```
 
 Finally convert the ONNX model into OpenVINO IR format then in a blob file, using a similar method to the Yunet convertion :
@@ -172,17 +177,17 @@ Finally convert the ONNX model into OpenVINO IR format then in a blob file, usin
 > cd models
 > ./docker_openvino2tensorflow.sh # Run the docker container
 > cd workdir/build
-> ./build_blob_from_onnx.sh -h
+> ./build_postproc_blob.sh -h
 Generate a blob from an ONNX model with a specified number of shaves and cmx (nb cmx = nb shaves)
 
-Usage: ./build_blob_from_onnx.sh [-m model_onnx] [-s nb_shaves]
+Usage: ./build_postproc_blob.sh [-m model_onnx] [-s nb_shaves]
 
 model_onnx: ONNX file
 nb_shaves must be between 1 and 13 (default=4)
 
 # Example:
-> ./build_blob_from_onnx.sh -m postproc_yunet_top50_180x320.onnx
-# The command above generates 'postproc_yunet_top50_360x640_sh4.blob' in the 'models' directory
+> ./build_postproc_blob.sh -m postproc_yunet_top50_th60_180x320.onnx
+# The command above generates 'postproc_yunet_top50_th60_360x640_sh4.blob' in the 'models' directory
 ```
 
 

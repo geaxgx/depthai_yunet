@@ -4,8 +4,7 @@ from torchvision.ops import nms
 import numpy as np
 from itertools import product
 import onnx
-
-
+import os
 import argparse
 
 iou_threshold = 0.3
@@ -148,10 +147,6 @@ def patch_nms(model, top_k, score_thresh=None):
 
             # mobpc = max_out_boxes_per_class
             mobpc_input = node.inputs[2]
-            # print(mobpc_input)
-            # print(vars(mobpc_input))
-            # print(mobpc_input._values)
-            # print(vars(mobpc_input._values))
             mobpc = mobpc_input._values.tensor.raw_data
             mobpc = struct.unpack("q", mobpc)
             print("Current value of max_out_boxes_per_class", mobpc)
@@ -164,7 +159,6 @@ def patch_nms(model, top_k, score_thresh=None):
                 score_threshold_input = gs.Constant("_score_thresh", values=np.array(score_thresh, dtype=np.float32))
                 node.inputs.append(score_threshold_input)
                 print(f"score_threshold={score_thresh} added ")
-                # print(vars(node.inputs[4]))
 
             break
     assert nms_not_found==False, "NonMaxSuppression could not be found in the graph !"
@@ -176,7 +170,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-W', type=int, required=True, help="yunet model input width")
 parser.add_argument('-H', type=int, required=True, help="yunet model input height")
 parser.add_argument('-top_k', type=int, default=50, help="max number of detections (default=%(default)i)")
-parser.add_argument('-score_thresh', type=float, help="patch NMS op to use 'score_threshold' with given value")
+parser.add_argument('-score_thresh', type=float, default=0.6, help="NMS score threshold")
 parser.add_argument('-no_simp', action="store_true", help="do not run simplifier")
 args = parser.parse_args()
 
@@ -184,24 +178,27 @@ w = args.W
 h = args.H
 top_k = args.top_k
 run_simp = not args.no_simp
+score_thresh=  args.score_thresh
 
 priors = prior_gen(w, h)
 
 # test(w, h, top_k, priors)
 
-raw_onnx_name = f"postproc_yunet_top{top_k}_{h}x{w}_raw.onnx"
-export_onnx(args.W, args.H, args.top_k, priors, raw_onnx_name)
+os.makedirs("onnx", exist_ok=True)
+name = f"onnx/postproc_yunet_top{top_k}_th{int(100*score_thresh)}_{h}x{w}"
+
+
+raw_onnx_name = name + "_raw.onnx"
+export_onnx(w, h, top_k, priors, raw_onnx_name)
 
 model = onnx.load(raw_onnx_name)
 print("Model IR version:", model.ir_version)
 if run_simp:
     model = simplify(model)
-model = patch_nms(model, top_k, args.score_thresh)
+model = patch_nms(model, top_k, score_thresh)
 print("Model IR version:", model.ir_version)
 
-
-
-onnx_name = f"postproc_yunet_top{top_k}_{h}x{w}.onnx"
+onnx_name = name + ".onnx"
 onnx.save(model, onnx_name)
 print(f"Model saved in {onnx_name}")
 

@@ -46,7 +46,7 @@ then
         echo "The model ${model_onnx} does not exist"
         exit 1
 fi
-model=$(echo $model_onnx | sed 's/.onnx//')
+model=$(basename -s .onnx ${model_onnx})
 
 if [ -z "$nb_shaves" ]
 then
@@ -75,22 +75,19 @@ source /opt/intel/openvino_2021/bin/setupvars.sh
 #         exit 1
 # fi
 
-mkdir -p openvino/FP16
+mkdir -p openvino
 $INTEL_OPENVINO_DIR/deployment_tools/model_optimizer/mo_onnx.py \
-                --input_model ${model}.onnx --data_type half --model_name openvino/FP16/$model 
-mkdir -p openvino/myriad
+                --input_model ${model_onnx} --data_type half --model_name openvino/$model 
+
+# Patch the xml file
+python3 patch_xml.py -f openvino/$model_xml
+
 $INTEL_OPENVINO_DIR/deployment_tools/tools/compile_tool/compile_tool -d MYRIAD \
-                -m openvino/FP16/$model_xml \
+                -m openvino/$model_xml \
                 -ip FP16 \
                 -VPU_NUMBER_OF_SHAVES $nb_shaves \
                 -VPU_NUMBER_OF_CMX_SLICES $nb_shaves \
-                -o openvino/myriad/$model_blob
+                -o ../$model_blob
 
 
-cp -p openvino/myriad/$model_blob  ..
-if [ $? -eq 0 ]
-then
-        echo "${model_blob} has been successfully copied in models"
-else
-        echo "There was a problem on generating ${model_blob} !!!"
-fi
+

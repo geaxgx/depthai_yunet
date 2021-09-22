@@ -1,6 +1,8 @@
-Some explanations on the creation of the Post Processing model. The first 5 steps below are done by a call to:
+### Some explanations on the creation of the Post Processing model. 
+
+The first 5 steps below are done by running:
 ```
-python3 generate_postproc_onnx.py -H 180 -W 320 -top_k 50
+python3 generate_postproc_onnx.py -H 180 -W 320 -top_k 50 -score_thresh 0.6
 ```
 1) The model is a procedural (not trained) model created from scratch using pytorch :
     ```
@@ -24,50 +26,47 @@ python3 generate_postproc_onnx.py -H 180 -W 320 -top_k 50
 
 4) The pytorch model is then exported in ONNX format. Using Netron, we can see that the pytorch nms is converted into ONNX NonMaxSuppression:
 ![ONNX raw](media/onnx_raw.png)
-ONNX NonMaxSuppression has more [parameters](https://github.com/onnx/onnx/blob/master/docs/Operators.md#NonMaxSuppression) than pytorch nms. In particular, `max_output_boxes_per_class` limits the number of boxes to be selected per batch per class. In the image above, we see that its value has been set to a huge value (9223372036854775807) during the convertion process, meaning there is no limit in practice.
-5) Using onnx_graphsurgeon, `max_output_boxes_per_class` is patched to a reasonable user-defined value (top_k=50):
-![ONNX patched](media/onnx_patched.png)
-6) The patched ONNX model is converted into OpenVINO IR FP16 then compiled into a blob file with the following command:
+ONNX NonMaxSuppression has more [parameters](https://github.com/onnx/onnx/blob/master/docs/Operators.md#NonMaxSuppression) than pytorch nms. In particular, `max_output_boxes_per_class` limits the number of boxes to be selected per batch per class. In the image above, we see that its value has been set to a huge value (9223372036854775807) during the convertion process, meaning there is no limit in practice. Moreover, from the documentation, we see that ONNX NonMaxSuppression supports the input `score_threshold` (boxes with score below that threshold are removed). This optional input does not appear here since `score_threshold` is not used in `torchvision.ops.nms()`.
+5) Using onnx_graphsurgeon, we apply 2 modifications to the ONNX model:
+    - `max_output_boxes_per_class` is patched to a reasonable user-defined value (top_k=50);
+    - the input `score_threshold` is added to the NonMaxSuppression node with a user-defined value (here 0.6).
+    
+    ![ONNX patched](media/onnx_patched.png)
+6) The next 3 steps including this one are done with the following command:
+
     ```
-    ./build_blob_from_onnx.sh -m postproc_yunet_top50_180x320.onnx
-    ```
-    The ONNX NonMaxSuppression is converted into [OpenVINO NanMaxSUppression-5](https://docs.openvinotoolkit.org/latest/openvino_docs_ops_sort_NonMaxSuppression_5.html).
-    ![OpenVINO FP16](media/openvinoFP16.png)
-    ```
-    <layer id="46" name="NonMaxSuppression_108" type="NonMaxSuppression" version="opset5">
-        <data box_encoding="corner" sort_result_descending="false" output_type="i64"/>
-        <input>
-            <port id="0" precision="FP16">
-                <dim>1</dim>
-                <dim>3210</dim>
-                <dim>4</dim>
-            </port>
-            <port id="1" precision="FP16">
-                <dim>1</dim>
-                <dim>1</dim>
-                <dim>3210</dim>
-            </port>
-            <port id="2" precision="I64">
-                <dim>1</dim>
-            </port>
-            <port id="3" precision="FP16">
-                <dim>1</dim>
-            </port>
-        </input>
-        <output>
-            <port id="4" precision="I64" names="111">
-                <dim>50</dim>
-                <dim>3</dim>
-            </port>
-            <port id="5" precision="FP32">
-                <dim>50</dim>
-                <dim>3</dim>
-            </port>
-            <port id="6" precision="I64">
-                <dim>1</dim>
-            </port>
-        </output>
-    </layer>
+    ./build_postproc_blob.sh -m postproc_yunet_top50_th60_180x320.onnx
     ```
 
-Note that patching `max_output_boxes_per_class` improves significantly the processing speed. For a resolution of 360x640, the complete application FPS is around 2 without the patch vs 35 with the patch.
+    The patched ONNX model is converted into OpenVINO IR FP16.
+    Under Netron, we see that ONNX NonMaxSuppression has been converted into [OpenVINO NanMaxSUppression-5](https://docs.openvinotoolkit.org/latest/openvino_docs_ops_sort_NonMaxSuppression_5.html).
+    ![OpenVINO](media/openvino_raw.png)
+
+    Note that OpenVINO NonMaxSUppression-5 has 3 outputs :
+    ![NonMaxSUppression-5 outputs](media/NonMaxSuppression-5-outputs.png)
+    In the converted model, only the output `selected_indices` is used.
+7) Patch the IR xml file in order to set the NonMaxSUppression-5 third output `valid_outputs` as a model global output:
+    ![OpenVINO](media/openvino_patched.png)
+
+    So now, the model has 2 global outputs:
+    - an array of 50 boxes, where only the first entries correspond to valid boxes;
+    - the number of the valid boxes. Without this number, as the non valid entries can be filled with garbage, a non valid entry could be wrongly considered as a valid entry. 
+
+    The patch consists in adding a new layer in the xml file:
+
+    ![Patch xml new layer](media/xml_patch_new_layer.png)
+
+    and a new edge :
+
+    ![Patch xml new edge](media/xml_patch_new_edge.png)
+
+8) Finally compile the patched IR model into a blob file
+
+
+## Why the patches ?
+
+Patching `max_output_boxes_per_class` improves significantly the processing speed. For a resolution of 360x640 (13150 boxes), the complete application FPS is around 2 without the patch vs 35 with the patch !
+
+Patching `score_threshold` also improves the speed but only marginally (a few fps).
+
+Patching the xml file brings a way for the user to filter out the non valid boxes.

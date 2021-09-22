@@ -53,7 +53,8 @@ MODEL=face_detection_yunet
 
 # Optimize onnx model with chosen resolution
 # ONNX Simplifier: pip3 install onnx-simplifier
-python3 -m onnxsim ${MODEL}.onnx face_detection_yunet_${H}x${W}.onnx --input-shape 1,3,${H},${W}                                                                                                                                 
+mkdir -p onnx
+python3 -m onnxsim ${MODEL}.onnx onnx/face_detection_yunet_${H}x${W}.onnx --input-shape 1,3,${H},${W}                                                                                                                                 
 if [ $? -ne 0 ]
 then
 	echo "Exit on error !!!"	
@@ -61,22 +62,14 @@ then
 fi
 
 $INTEL_OPENVINO_DIR/deployment_tools/model_optimizer/mo.py \
---input_model ${MODEL}_${H}x${W}.onnx \
+--input_model onnx/${MODEL}_${H}x${W}.onnx \
 --data_type FP16 \
---output_dir openvino/FP16
-mkdir -p openvino/myriad
+--output_dir openvino
+
 ${INTEL_OPENVINO_DIR}/deployment_tools/inference_engine/lib/intel64/myriad_compile \
--m openvino/FP16/${MODEL}_${H}x${W}.xml \
+-m openvino/${MODEL}_${H}x${W}.xml \
 -ip U8 \
 -VPU_NUMBER_OF_SHAVES $nb_shaves \
 -VPU_NUMBER_OF_CMX_SLICES $nb_shaves \
--o openvino/myriad/${MODEL}_${H}x${W}_sh${nb_shaves}.blob
+-o ../${MODEL}_${H}x${W}_sh${nb_shaves}.blob
 
-if [ -f openvino/myriad/${MODEL}_${H}x${W}_sh${nb_shaves}.blob ]
-then
-	cp -p openvino/myriad/${MODEL}_${H}x${W}_sh${nb_shaves}.blob ..
-	if [ $? -eq 0 ]
-	then
-		echo "${MODEL}_${H}x${W}_sh${nb_shaves}.blob has been successfully copied in models"
-	fi
-fi
