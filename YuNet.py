@@ -340,7 +340,10 @@ class YuNet:
         ) # box_num x class_num
         if len(keep_idx) > 0:
             dets = dets[keep_idx]
-            dets = np.squeeze(dets, axis=1)
+            # If opencv >= 4.5.4.58, NMSBoxes returns Nx1x15
+            # Else, NMSBoxes returns 1x15
+            if len(dets.shape) > 2:
+                dets = np.squeeze(dets, axis=1)
             return dets # [:self.keep_top_k]
         else:
             return np.empty(shape=(0, 15))
